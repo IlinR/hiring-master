@@ -3,22 +3,21 @@ import ITask from './Task';
 
 export default async function run(executor: IExecutor, queue: AsyncIterable<ITask>, maxThreads = 0) {
     maxThreads = Math.max(0, maxThreads)
-    const promisesCount = [] 
+    const promisesCount:any = [] 
     let threads = maxThreads
+    const WaitingQueue: ITask = [] 
     const queues = new Map();
     const activeTasks = [] as Promise<void>[]
     let lounched = 0
     let tasks = 0
     const runTask = async (task: ITask) => {
-        lounched++
-        // if (!(threads>0 || maxThreads==0))
-        //     console.log(threads)
         activeTasks[task.targetId] = executor.executeTask(task)
-        threads--
         if (queues.has(task.targetId))
             if (queues.get(task.targetId).length)
                 {
-                    activeTasks[task.targetId].then(() => runTask(queues.get(task.targetId).shift()))
+                    activeTasks[task.targetId].then(() => {let t=queues.get(task.targetId).shift()
+                        runTask(t)
+                    })
                     return
                 }
         
@@ -29,20 +28,21 @@ export default async function run(executor: IExecutor, queue: AsyncIterable<ITas
         
         
     }
-    console.log("maxThreads"+ maxThreads)
     for await (const task of queue) {
-        tasks++
         if (!activeTasks[task.targetId])
             {
                 if (threads>0 || maxThreads==0){
                     runTask(task)
+                    threads--
                 }
                 else {
-                    while(threads>0)
+                    console.log(threads)
+                    while(threads<1)
                         {
-                            Promise.race(activeTasks)
+                            await Promise.all(activeTasks)
                         }
                         runTask(task)
+                        threads--
                 }
             }
         else {
@@ -50,18 +50,11 @@ export default async function run(executor: IExecutor, queue: AsyncIterable<ITas
                 queues.set(task.targetId,[])
             queues.get(task.targetId).push(task)
             if (queues.get(task.targetId).length==1)
-                activeTasks[task.targetId].then(()=>
-            {const tsk = queues.get(task.targetId).shift()
-                // if (tsk === undefined)
-                //     {
-                //         console.log(threads)
-                //             console.log(tsk)
-                //     }
-                runTask(tsk)})
+                activeTasks[task.targetId].then(()=>{runTask(queues.get(task.targetId).shift())})
         }
         
     }
-    let prom = Promise.all(activeTasks)
-    console.log("tasks"+ tasks + "laun" + lounched)
-    return prom
+    console.log(maxThreads)
+    return Promise.all(activeTasks)
+
 }
